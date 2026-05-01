@@ -1,0 +1,109 @@
+@import "tailwindcss";
+
+:root {
+  --background: #FDF8F0;
+  --foreground: #3D3D3D;
+}
+
+@theme inline {
+  --color-cream: #FDF8F0;
+  --color-rose-soft: #F2C4CE;
+  --color-sage: #B2C9AD;
+  --color-blush: #F7E1D7;
+  --color-charcoal: #3D3D3D;
+  --color-warm-white: #FEFEFE;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-display: var(--font-playfair-display);
+  --font-body: var(--font-dm-sans);
+  --font-sans: var(--font-dm-sans);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-dm-sans), sans-serif;
+}
+
+.habit-card[draggable="true"] {
+  cursor: grab;
+}
+
+.habit-card.dragging {
+  opacity: 0.4;
+}
+
+.habit-card.drag-over {
+  border: 2px dashed var(--accent);
+}
+
+#editModal {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 1200;
+}
+
+.edit-modal-box {
+  width: min(480px, 100%);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.4rem;
+  box-shadow: var(--shadow);
+}
+
+.edit-btn {
+  border: 1px solid #d9c8ae;
+  color: #5f4f3a;
+  background: #fdf6ea;
+  border-radius: 10px;
+  padding: 0.35rem 0.55rem;
+  cursor: pointer;
+}
+
+.edit-btn:hover {
+  background: #f7ead4;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.modal-save-btn {
+  flex: 1;
+  padding: 0.7rem;
+  background: var(--accent);
+  color: #23190a;
+  border: 0;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.modal-cancel-btn {
+  padding: 0.7rem 1rem;
+  background: transparent;
+  color: #5f4f3a;
+  border: 1px solid #d9c8ae;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
