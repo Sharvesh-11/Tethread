@@ -31,7 +31,7 @@ class Settings(BaseSettings):
 
 
 	# Service API key for automation integrations (n8n, etc).
-	SERVICE_API_KEY: str
+	SERVICE_API_KEY: str = ""
 
 	# Load configuration values from a local .env file.
 	model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
