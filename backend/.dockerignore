@@ -2,4 +2,8 @@
 venv/           # Docker installs its own dependencies
 __pycache__/    # generated automatically
 *.pyc           # compiled Python files
+Dockerfile      # no need to copy itself
+.dockerignore   # no need to copy itself
 alembic/        # migrations run separately
+
+

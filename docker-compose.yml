@@ -1,0 +1,62 @@
+version: "3.8"
+
+services:
+  db:
+    image: postgres:15
+    container_name: tethread-database
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: tethreaddb
+      POSTGRES_USER: tethread
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - tethread-network
+
+  backend:
+    image: ${DOCKER_USERNAME}/tethread-backend:latest
+    container_name: tethread-backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://tethread:${DB_PASSWORD}@db:5432/tethreaddb
+      SECRET_KEY: ${SECRET_KEY}
+      ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 10080
+      FRONTEND_URL: ${FRONTEND_URL}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET}
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    networks:
+      - tethread-network
+
+  frontend:
+    image: ${DOCKER_USERNAME}/tethread-frontend:latest
+    container_name: tethread-frontend
+    restart: unless-stopped
+    environment:
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      NEXTAUTH_URL: ${NEXTAUTH_URL}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      BACKEND_URL: ${BACKEND_URL}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - tethread-network
+
+volumes:
+  postgres_data:
+
+networks:
+  tethread-network:
+    driver: bridge	
