@@ -85,7 +85,7 @@ export default function ProductPage({ params }: ProductPageProps) {
     );
   }
 
-  const stockQty = Number(product.stock_quantity ?? product.stock ?? 0);
+ const stockQty = Number(product.stock_quantity ?? 0);
 
   const decreaseQuantity = () => setQuantity((prev) => Math.max(1, prev - 1));
   const increaseQuantity = () => setQuantity((prev) => Math.min(stockQty, prev + 1));
@@ -238,7 +238,7 @@ export default function ProductPage({ params }: ProductPageProps) {
                 price={item.price}
                 image_url={item.image_url ?? ""}
                 category={item.category ?? ""}
-                stock_quantity={Number(item.stock_quantity ?? item.stock ?? 0)}
+                stock_quantity={Number(item.stock_quantity ?? item.stock_quantity ?? 0)}
               />
             ))}
           </div>
