@@ -1,10 +1,8 @@
 name: CI/CD Tethread
-
 on:
   push:
     branches:
       - main
-
 jobs:
   build-and-push:
     name: Build and Push Docker Images
@@ -12,21 +10,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Login to Docker Hub
         run: |
           echo "${{ secrets.DOCKER_TOKEN }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
-
       - name: Build and push backend
         run: |
           docker build -t ${{ secrets.DOCKER_USERNAME }}/tethread-backend:latest ./backend
           docker push ${{ secrets.DOCKER_USERNAME }}/tethread-backend:latest
-
       - name: Build and push frontend
         run: |
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/tethread-frontend:latest ./frontend
+          docker build \
+            --build-arg NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }} \
+            -t ${{ secrets.DOCKER_USERNAME }}/tethread-frontend:latest ./frontend
           docker push ${{ secrets.DOCKER_USERNAME }}/tethread-frontend:latest
-
   deploy:
     name: Deploy to EC2
     runs-on: ubuntu-latest
@@ -40,8 +36,6 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd /var/www/app/tethread || exit 1
-
-            # Write single .env file for docker-compose (secrets never in image)
             cat > .env << 'EOF'
             DOCKER_USERNAME=${{ secrets.DOCKER_USERNAME }}
             DB_PASSWORD=${{ secrets.DB_PASSWORD }}
@@ -57,8 +51,6 @@ jobs:
             GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
             BACKEND_URL=http://backend:8000
             EOF
-
-            # Pull latest images and recreate containers
             docker compose pull
             docker compose up -d --force-recreate
             docker image prune -f
