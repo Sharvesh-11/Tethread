@@ -12,7 +12,7 @@ const authOptions: NextAuthOptions = {
     async signIn({ user, account }) {
   console.log("=== signIn fired ===", user.email);
   try {
-    const res = await fetch("http://localhost:8000/api/v1/auth/google-jwt", {
+    const res = await fetch(`${process.env.BACKEND_URL}/api/v1/auth/google-jwt`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
