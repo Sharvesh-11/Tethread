@@ -21,6 +21,44 @@ const dateFormatter = new Intl.DateTimeFormat("en-IN", {
   minute: "2-digit",
 });
 
+function filterData(data: CompletedOrderAnalytic[], isCompleted: true, searchTerm: string, filterStartDate: string, filterEndDate: string): CompletedOrderAnalytic[];
+function filterData(data: CancelledOrderAnalytic[], isCompleted: false, searchTerm: string, filterStartDate: string, filterEndDate: string): CancelledOrderAnalytic[];
+function filterData(
+  data: CompletedOrderAnalytic[] | CancelledOrderAnalytic[],
+  isCompleted: boolean,
+  searchTerm: string,
+  filterStartDate: string,
+  filterEndDate: string
+): CompletedOrderAnalytic[] | CancelledOrderAnalytic[] {
+  return (data as (CompletedOrderAnalytic | CancelledOrderAnalytic)[]).filter((item) => {
+    const matchesSearch =
+      searchTerm === "" ||
+      item.user_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.product_name.toLowerCase().includes(searchTerm.toLowerCase());
+
+    if (!matchesSearch) return false;
+
+    if (filterStartDate || filterEndDate) {
+      const dateKey = isCompleted ? "order_date" : "cancellation_date";
+      const dateStr = item[dateKey as keyof typeof item] as string;
+      const itemDate = new Date(dateStr);
+
+      if (filterStartDate) {
+        const startDate = new Date(filterStartDate);
+        if (itemDate < startDate) return false;
+      }
+
+      if (filterEndDate) {
+        const endDate = new Date(filterEndDate);
+        endDate.setHours(23, 59, 59, 999);
+        if (itemDate > endDate) return false;
+      }
+    }
+
+    return true;
+  }) as CompletedOrderAnalytic[] | CancelledOrderAnalytic[];
+}
+
 export default function AdminDashboard() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
@@ -39,7 +77,6 @@ export default function AdminDashboard() {
         setIsLoading(true);
         setError(null);
 
-        // Check admin authentication
         const currentUser = await getMe();
         if (!currentUser.is_admin) {
           router.push("/login");
@@ -47,7 +84,6 @@ export default function AdminDashboard() {
         }
         setUser(currentUser);
 
-        // Fetch analytics data
         const [completed, cancelled] = await Promise.all([
           getCompletedOrdersAnalytics(),
           getCancelledOrdersAnalytics(),
@@ -66,41 +102,8 @@ export default function AdminDashboard() {
     loadData();
   }, [router]);
 
-  const filterData = (
-    data: CompletedOrderAnalytic[] | CancelledOrderAnalytic[],
-    isCompleted: boolean
-  ) => {
-    return data.filter((item) => {
-      const matchesSearch =
-        searchTerm === "" ||
-        item.user_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.product_name.toLowerCase().includes(searchTerm.toLowerCase());
-
-      if (!matchesSearch) return false;
-
-      if (filterStartDate || filterEndDate) {
-        const dateKey = isCompleted ? "order_date" : "cancellation_date";
-        const dateStr = item[dateKey as keyof typeof item] as string;
-        const itemDate = new Date(dateStr);
-
-        if (filterStartDate) {
-          const startDate = new Date(filterStartDate);
-          if (itemDate < startDate) return false;
-        }
-
-        if (filterEndDate) {
-          const endDate = new Date(filterEndDate);
-          endDate.setHours(23, 59, 59, 999);
-          if (itemDate > endDate) return false;
-        }
-      }
-
-      return true;
-    });
-  };
-
-  const filteredCompleted = filterData(completedOrders, true);
-  const filteredCancelled = filterData(cancelledOrders, false);
+  const filteredCompleted = filterData(completedOrders, true, searchTerm, filterStartDate, filterEndDate) as CompletedOrderAnalytic[];
+  const filteredCancelled = filterData(cancelledOrders, false, searchTerm, filterStartDate, filterEndDate) as CancelledOrderAnalytic[];
 
   const completedStats = {
     totalOrders: completedOrders.length,
@@ -112,7 +115,10 @@ export default function AdminDashboard() {
     uniqueUsers: new Set(cancelledOrders.map((o) => o.user_email)).size,
   };
 
-  const handleExportCSV = (data: CompletedOrderAnalytic[] | CancelledOrderAnalytic[], filename: string) => {
+  const handleExportCSV = (
+    data: CompletedOrderAnalytic[] | CancelledOrderAnalytic[],
+    filename: string
+  ) => {
     if (data.length === 0) {
       alert("No data to export");
       return;
@@ -203,7 +209,6 @@ export default function AdminDashboard() {
 
       <main className="flex-1 px-4 py-8 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
-          {/* Header */}
           <div className="mb-8">
             <h1 className="font-display text-4xl font-bold text-charcoal mb-2">Admin Dashboard</h1>
             <p className="text-charcoal/70">Order analytics and management</p>
@@ -215,7 +220,6 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          {/* Filter Section */}
           <div className="mb-6 bg-warm-white p-4 rounded-lg shadow-sm">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <input
@@ -246,7 +250,6 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* Tabs */}
           <div className="mb-6 flex gap-4 border-b border-charcoal/10">
             <button
               onClick={() => setActiveTab("completed")}
@@ -270,7 +273,6 @@ export default function AdminDashboard() {
             </button>
           </div>
 
-          {/* Completed Orders Tab */}
           {activeTab === "completed" && (
             <div>
               <div className="mb-4 flex justify-between items-center">
@@ -346,7 +348,6 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          {/* Cancelled Orders Tab */}
           {activeTab === "cancelled" && (
             <div>
               <div className="mb-4 flex justify-between items-center">
