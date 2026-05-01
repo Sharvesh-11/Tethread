@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import Footer from "@/components/layout/Footer";
 import Navbar from "@/components/layout/Navbar";
+import Footer from "@/components/layout/Footer";
 import { products } from "@/lib/mockData";
 
 type OrderStatus = "delivered" | "shipped" | "pending" | "cancelled" | "processing" | "unknown";
