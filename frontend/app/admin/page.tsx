@@ -54,7 +54,7 @@ export default function AdminDashboard() {
           fetch(`${API}/users`, { headers }),
         ]);
         if (!ordersRes.ok || !productsRes.ok || !usersRes.ok) throw new Error("Failed to fetch stats");
-        const orders = await ordersRes.json();
+        const orders: { status: string }[] = await ordersRes.json();
         const products = await productsRes.json();
         const users = await usersRes.json();
         setStats([
