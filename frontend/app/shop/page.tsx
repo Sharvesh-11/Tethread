@@ -16,7 +16,7 @@ const categoryMap: Record<string, string> = {
   "Pokemon ⚡": "pokemon",
 };
 
-type Product = {1
+type Product = {
   id: string;
   name: string;
   price: number;
