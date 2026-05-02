@@ -184,59 +184,76 @@ export default function CheckoutPage() {
 
 		return nextErrors;
 	};
+const N8N_WEBHOOK_URL = "https://n8n.zenith-labs.app/webhook/checkout";
 
-	const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-		event.preventDefault();
-		setSubmitError("");
-		setFormErrors({});
+const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  event.preventDefault();
+  setSubmitError("");
+  setFormErrors({});
 
-		if (!isHydrated) {
-			setSubmitError("Preparing your cart. Please try again in a moment.");
-			return;
-		}
+  if (!isHydrated) {
+    setSubmitError("Preparing your cart. Please try again in a moment.");
+    return;
+  }
 
-		if (items.length === 0) {
-			setSubmitError("Your cart is empty.");
-			return;
-		}
+  if (items.length === 0) {
+    setSubmitError("Your cart is empty.");
+    return;
+  }
 
-		const nextErrors = validateForm();
-		if (Object.keys(nextErrors).length > 0) {
-			setFormErrors(nextErrors);
-			return;
-		}
+  const nextErrors = validateForm();
+  if (Object.keys(nextErrors).length > 0) {
+    setFormErrors(nextErrors);
+    return;
+  }
 
-		const resolvedUserId = userId ?? getUserId(sessionUser?.id);
-		if (!resolvedUserId) {
-			setSubmitError("We could not verify your account. Please sign in again.");
-			return;
-		}
+  const resolvedUserId = userId ?? getUserId(sessionUser?.id);
+  if (!resolvedUserId) {
+    setSubmitError("We could not verify your account. Please sign in again.");
+    return;
+  }
 
-		setIsSubmitting(true);
+  setIsSubmitting(true);
 
-		try {
-			const order = await createCheckoutOrder({
-				user_id: resolvedUserId,
-				items: items.map((item) => ({
-					product_id: String(item.id),
-					quantity: item.quantity,
-					price: item.price,
-				})),
-				total_price: totalPrice,
-				user_name: formData.full_name.trim(),
-				user_email: formData.email.trim(),
-				user_phone: formData.phone.trim(),
-				delivery_address: formData.delivery_address.trim(),
-			});
+ try {
+  const orderPayload = {
+    user_id: resolvedUserId,
+    items: items.map((item) => ({
+      product_id: String(item.id),
+      name: item.name,
+      quantity: item.quantity,
+      price: item.price,
+    })),
+    total_price: totalPrice,
+    user_name: formData.full_name.trim(),
+    user_email: formData.email.trim(),
+    user_phone: formData.phone.trim(),
+    delivery_address: formData.delivery_address.trim(),
+  };
 
-			clearCart();
-			setOrderId(order.id);
-		} catch (error) {
-			setSubmitError(error instanceof Error ? error.message : "Unable to place your order.");
-		} finally {
-			setIsSubmitting(false);
-		}
-	};
+  // Step 1: create the order first to get the order ID
+  const order = await createCheckoutOrder(orderPayload);
+
+  // Step 2: send to n8n with the real order ID
+  await fetch(N8N_WEBHOOK_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ...orderPayload,
+      order_id: order.id,
+    }),
+  }).catch((err) => {
+    console.error("n8n webhook error:", err);
+  });
+
+  clearCart();
+  setOrderId(order.id);
+} catch (error) {
+  setSubmitError(error instanceof Error ? error.message : "Unable to place your order.");
+} finally {
+  setIsSubmitting(false);
+}
+};
 
 	if (!isHydrated) {
 		return (
@@ -556,3 +573,11 @@ export default function CheckoutPage() {
 		</div>
 	);
 }
+
+
+
+
+
+
+
+
