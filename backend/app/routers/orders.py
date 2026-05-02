@@ -33,8 +33,8 @@ class CreateOrderRequest(BaseModel):
 class UpdateOrderStatusRequest(BaseModel):
     status: str
 
-def serialize_order(order: Order) -> dict:
-    return {
+def serialize_order(order: Order, include_user: bool = False) -> dict:
+    data = {
         "id": order.id,
         "user_id": order.user_id,
         "status": order.status,
@@ -55,6 +55,11 @@ def serialize_order(order: Order) -> dict:
             for item in order.items
         ],
     }
+    if include_user and order.user:
+        data["user_name"] = order.user.full_name
+        data["user_email"] = order.user.email
+        data["user_phone"] = order.user.phone_number
+    return data
 
 @router.post("")
 async def create_order(
@@ -200,10 +205,7 @@ async def list_all_orders(
         .order_by(Order.created_at.desc())
     )
     orders = result.scalars().all()
-    return [
-        {**serialize_order(order), "user_name": order.user.full_name, "user_email": order.user.email}
-        for order in orders
-    ]
+    return [serialize_order(order, include_user=True) for order in orders]
 
 @router.delete("/admin/{order_id}", status_code=204)
 async def delete_order(
