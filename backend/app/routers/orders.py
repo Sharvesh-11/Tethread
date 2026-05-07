@@ -205,7 +205,10 @@ async def list_all_orders(
         .order_by(Order.created_at.desc())
     )
     orders = result.scalars().all()
-    return [serialize_order(order, include_user=True) for order in orders]
+    return [
+        {**serialize_order(order), "user_name": order.user.full_name, "user_email": order.user.email}
+        for order in orders
+    ]
 
 @router.delete("/admin/{order_id}", status_code=204)
 async def delete_order(

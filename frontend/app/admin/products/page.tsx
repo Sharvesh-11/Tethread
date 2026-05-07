@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import { getSession } from "next-auth/react";
+import React, { useEffect, useState, useMemo } from "react";
 import { getAdminHeaders } from "@/lib/api";
 
 type Product = {
@@ -33,7 +34,6 @@ async function uploadToCloudinary(file: File): Promise<string> {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
-
   const res = await fetch(
     `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
     { method: "POST", body: formData }
@@ -52,6 +52,7 @@ export default function ProductsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     async function fetchProducts() {
@@ -71,6 +72,16 @@ export default function ProductsPage() {
     }
     fetchProducts();
   }, []);
+
+  const filteredProducts = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return products;
+    return products.filter(
+      (p) =>
+        p.name.toLowerCase().includes(query) ||
+        p.category?.toLowerCase().includes(query)
+    );
+  }, [search, products]);
 
   function openModal(product: Product | null = null) {
     if (product) {
@@ -143,23 +154,48 @@ export default function ProductsPage() {
     }
   }
 
-async function handleDelete(id: string) {
-  console.log("handleDelete called with id:", id);
-  if (!confirm("Delete this product?")) return;
+  async function handleDelete(id: string) {
+    if (!confirm("Delete this product?")) return;
+    try {
+      const headers = await getAdminHeaders();
+      const res = await fetch(`${API}/products/${id}`, { method: "DELETE", headers });
+      if (!res.ok) throw new Error("Failed to delete");
+      setProducts((prev) => prev.filter((p) => String(p.id) !== String(id)));
+    } catch {
+      alert("Failed to delete product");
+    }
+  }
+
+  async function handleConnectTelegram() {
+  let userId = "";
+
   try {
     const headers = await getAdminHeaders();
-    const res = await fetch(`${API}/products/${id}`, { method: "DELETE", headers });
-    console.log("response status:", res.status);
-    if (!res.ok) throw new Error("Failed to delete");
-    console.log("id type:", typeof id, "value:", id);
-    console.log("first product id type:", typeof products[0]?.id, "value:", products[0]?.id);
-    setProducts((prev) => prev.filter((p) => String(p.id) !== String(id)));
-    console.log("filter done");
-  } catch (err) {
-    console.error("Delete error:", err);
-    alert("Failed to delete product");
+    console.log("headers:", headers); // check what token is being sent
+
+    const res = await fetch(`${API}/auth/me`, { headers });
+    console.log("auth/me status:", res.status);
+
+    const data = await res.json();
+    console.log("auth/me response:", data); // see the full response shape
+
+    // try all possible id fields
+    userId = String(data.id || data.user_id || data.sub || "");
+    console.log("userId:", userId);
+  } catch (e) {
+    console.error("auth/me failed:", e);
   }
+
+  if (!userId) {
+    alert("Could not get user ID. Check console for details.");
+    return;
+  }
+
+  const telegramUrl = `https://t.me/Tethread_bot?start=user${userId}`;
+  console.log("Opening URL:", telegramUrl);
+  window.open(telegramUrl, "_blank");
 }
+
   async function toggleFeatured(id: string, is_featured: boolean) {
     try {
       const headers = { ...(await getAdminHeaders()), "Content-Type": "application/json" };
@@ -192,12 +228,51 @@ async function handleDelete(id: string) {
       <h1 className="font-display text-2xl font-bold mb-6 text-charcoal">
         Products Management
       </h1>
-      <button
-        className="mb-4 px-4 py-2 bg-sage text-charcoal rounded-xl font-semibold hover:bg-sage/80 transition-colors"
-        onClick={() => openModal()}
-      >
-        + Add Product
-      </button>
+
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <button
+          className="px-4 py-2 bg-sage text-charcoal rounded-xl font-semibold hover:bg-sage/80 transition-colors"
+          onClick={() => openModal()}
+        >
+          + Add Product
+        </button>
+
+        {/* Search bar */}
+        <div className="relative">
+          <input
+            type="text"
+            placeholder="Search by name or category..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="border border-sage/30 rounded-xl px-4 py-2 pl-9 text-sm text-charcoal focus:outline-none focus:border-sage w-64"
+          />
+          <span className="absolute left-3 top-2.5 text-charcoal/40 text-sm">🔍</span>
+          {search && (
+            <button
+              onClick={() => setSearch("")}
+              className="absolute right-3 top-2.5 text-charcoal/40 hover:text-charcoal text-xs"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
+        {/* Telegram Connect Button */}
+        <button
+          onClick={handleConnectTelegram}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-[#229ED9] text-white rounded-xl font-semibold hover:bg-[#1a8ec4] transition-colors text-sm"
+        >
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L7.88 13.375l-2.967-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.953-.001 0-.001.001 0 0l-.558-.769z"/>
+          </svg>
+          Connect Telegram
+        </button>
+      </div>
+
+      {/* Result count */}
+      <p className="text-xs text-charcoal/50 mb-3">
+        Showing {filteredProducts.length} of {products.length} products
+      </p>
 
       <div className="overflow-x-auto">
         <table className="min-w-full bg-warm-white rounded-2xl shadow-sm">
@@ -213,7 +288,7 @@ async function handleDelete(id: string) {
             </tr>
           </thead>
           <tbody>
-            {products.map((product) => (
+            {filteredProducts.map((product) => (
               <tr key={product.id} className="border-b border-blush">
                 <td className="py-3 px-4">
                   <img
@@ -258,11 +333,11 @@ async function handleDelete(id: string) {
                 </td>
               </tr>
             ))}
-            {products.length === 0 && (
+            {filteredProducts.length === 0 && (
               <tr>
                 <td colSpan={7}>
                   <div className="text-center py-12 text-charcoal/40">
-                    No products found
+                    {search ? `No products found for "${search}"` : "No products found"}
                   </div>
                 </td>
               </tr>
@@ -331,10 +406,8 @@ async function handleDelete(id: string) {
               <option value="pokemon">Pokemon</option>
             </select>
 
-            {/* Image Upload */}
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium text-charcoal">Product Image</label>
-
               {form.image_url && (
                 <img
                   src={form.image_url}
@@ -342,7 +415,6 @@ async function handleDelete(id: string) {
                   className="w-24 h-24 object-cover rounded-xl border border-sage/30"
                 />
               )}
-
               <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 border border-sage/30 rounded-xl text-sm text-charcoal hover:bg-sage/10 transition-colors">
                 {uploading ? (
                   <span className="flex items-center gap-2">
@@ -360,7 +432,6 @@ async function handleDelete(id: string) {
                   onChange={handleImageUpload}
                 />
               </label>
-
               <input
                 className="border border-sage/30 rounded-xl px-3 py-2 text-charcoal focus:outline-none focus:border-sage text-xs"
                 placeholder="Or paste image URL directly"
@@ -369,7 +440,6 @@ async function handleDelete(id: string) {
               />
             </div>
 
-            {/* Featured toggle */}
             <label className="flex items-center gap-3 cursor-pointer">
               <div
                 className={`relative w-11 h-6 rounded-full transition-colors duration-200 ${
