@@ -6,7 +6,7 @@ import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import { products } from "@/lib/mockData";
 
-type OrderStatus = "delivered" | "shipped" | "pending" | "cancelled" | "processing" | "unknown";
+type OrderStatus = "delivered" | "shipped" | "pending" | "cancelled" | "processing" | "confirmed" | "unknown";
 
 type OrderItem = {
   product_id: string;
@@ -28,6 +28,9 @@ type ToastState = {
   message: string;
   type: "success" | "error";
 } | null;
+
+// What action the confirm dialog is for
+type DialogAction = "cancel" | "refund";
 
 const placeholderImage = "https://placehold.co/400x400/F2C4CE/3D3D3D?text=🧶";
 const AUTH_TOKEN_KEY = "token";
@@ -76,6 +79,7 @@ const statusStyles: Record<OrderStatus, string> = {
   pending: "bg-yellow-200 text-charcoal",
   cancelled: "bg-rose-200 text-rose-900",
   processing: "bg-amber-200 text-charcoal",
+  confirmed: "bg-sage/40 text-charcoal",
   unknown: "bg-charcoal/10 text-charcoal",
 };
 
@@ -93,10 +97,8 @@ const dateFormatter = new Intl.DateTimeFormat("en-IN", {
 const productCatalog = new Map(products.map((product) => [String(product.id), product]));
 
 async function getToken(): Promise<string | null> {
-  // Try localStorage first
   const local = typeof window !== "undefined" ? localStorage.getItem(AUTH_TOKEN_KEY) : null;
   if (local) return local;
-  // Fall back to NextAuth session
   try {
     const { getSession } = await import("next-auth/react");
     const session = await getSession();
@@ -166,7 +168,10 @@ const parseStatus = (value: unknown): OrderStatus => {
   if (n === "shipped") return "shipped";
   if (n === "pending") return "pending";
   if (n === "cancelled") return "cancelled";
-  if (n === "processing") return "processing";
+  if (n === "confirmed") return "confirmed";
+  if (n === "refund_initiated") return "cancelled"; // show as processing
+  if (n === "refunded") return "cancelled"; // show as cancelled
+  if (n === "refund_failed") return "unknown";
   return "unknown";
 };
 
@@ -193,9 +198,7 @@ const getDeletedCancelledOrderIds = (): string[] => {
   try {
     const parsed = JSON.parse(rawValue);
     if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter((v): v is string => typeof v === "string" && v.trim().length > 0)
-      .map((v) => v.trim());
+    return parsed.filter((v): v is string => typeof v === "string" && v.trim().length > 0).map((v) => v.trim());
   } catch {
     return [];
   }
@@ -212,7 +215,8 @@ export default function OrdersPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [toast, setToast] = useState<ToastState>(null);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
-  const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
+  const [dialogAction, setDialogAction] = useState<DialogAction>("cancel");
+  const [processingOrderId, setProcessingOrderId] = useState<string | null>(null);
 
   const activeOrder = useMemo(
     () => orders.find((order) => order.id === selectedOrderId) || null,
@@ -223,10 +227,15 @@ export default function OrdersPage() {
     setToast({ message, type });
   }, []);
 
-  const closeCancelDialog = useCallback(() => {
-    if (cancellingOrderId) return;
+  const closeDialog = useCallback(() => {
+    if (processingOrderId) return;
     setSelectedOrderId(null);
-  }, [cancellingOrderId]);
+  }, [processingOrderId]);
+
+  const openDialog = useCallback((orderId: string, action: DialogAction) => {
+    setDialogAction(action);
+    setSelectedOrderId(orderId);
+  }, []);
 
   const fetchOrders = useCallback(async () => {
     setIsLoading(true);
@@ -240,7 +249,11 @@ export default function OrdersPage() {
       });
       const payload = await response.json().catch(() => null);
       if (!response.ok) {
-        const serverMessage = payload && typeof payload === "object" ? (payload as { message?: string; detail?: string }).detail || (payload as { message?: string }).message : "";
+        const serverMessage =
+          payload && typeof payload === "object"
+            ? (payload as { detail?: string; message?: string }).detail ||
+              (payload as { message?: string }).message
+            : "";
         throw new Error(serverMessage || "Unable to load your orders right now.");
       }
       const normalizedOrders = normalizeOrders(payload);
@@ -258,9 +271,10 @@ export default function OrdersPage() {
     }
   }, []);
 
+  // Cancel a pending order (no payment was made)
   const cancelOrder = useCallback(async () => {
-    if (!activeOrder || activeOrder.status !== "pending" || cancellingOrderId) return;
-    setCancellingOrderId(activeOrder.id);
+    if (!activeOrder || activeOrder.status !== "pending" || processingOrderId) return;
+    setProcessingOrderId(activeOrder.id);
     try {
       const token = await getToken();
       const response = await fetch(`${API}/orders/${activeOrder.id}/cancel`, {
@@ -269,23 +283,71 @@ export default function OrdersPage() {
       });
       const payload = await response.json().catch(() => null);
       if (!response.ok) {
-        const serverMessage = payload && typeof payload === "object" ? (payload as { message?: string; detail?: string }).detail || (payload as { message?: string }).message : "";
+        const serverMessage =
+          payload && typeof payload === "object"
+            ? (payload as { detail?: string; message?: string }).detail ||
+              (payload as { message?: string }).message
+            : "";
         throw new Error(serverMessage || "Unable to cancel this order right now.");
       }
-      const updatedOrder = normalizeOrder(payload ?? activeOrder);
-      setOrders((currentOrders) =>
-        currentOrders.map((order) =>
-          order.id === activeOrder.id ? { ...order, ...updatedOrder, status: "cancelled" } : order,
+      setOrders((current) =>
+        current.map((order) =>
+          order.id === activeOrder.id ? { ...order, status: "cancelled" } : order,
         ),
       );
       setSelectedOrderId(null);
-      showToast("Order cancelled successfully", "success");
+      showToast("Order cancelled successfully.", "success");
     } catch (error) {
       showToast(error instanceof Error ? error.message : "Unable to cancel this order right now.", "error");
     } finally {
-      setCancellingOrderId(null);
+      setProcessingOrderId(null);
     }
-  }, [activeOrder, cancellingOrderId, showToast]);
+  }, [activeOrder, processingOrderId, showToast]);
+
+  // Refund a confirmed (paid) order via Razorpay
+  const refundOrder = useCallback(async () => {
+    if (!activeOrder || activeOrder.status !== "confirmed" || processingOrderId) return;
+    setProcessingOrderId(activeOrder.id);
+    try {
+      const token = await getToken();
+      const response = await fetch(`${API}/payment/refund`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ order_id: activeOrder.id }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        const serverMessage =
+          payload && typeof payload === "object"
+            ? (payload as { detail?: string; message?: string }).detail ||
+              (payload as { message?: string }).message
+            : "";
+        throw new Error(serverMessage || "Unable to process refund right now.");
+      }
+      setOrders((current) =>
+        current.map((order) =>
+          order.id === activeOrder.id ? { ...order, status: "cancelled" } : order,
+        ),
+      );
+      setSelectedOrderId(null);
+      showToast("Refund initiated. Amount will be credited in 5–7 business days.", "success");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Unable to process refund right now.", "error");
+    } finally {
+      setProcessingOrderId(null);
+    }
+  }, [activeOrder, processingOrderId, showToast]);
+
+  const handleConfirmDialog = useCallback(() => {
+    if (dialogAction === "refund") {
+      void refundOrder();
+    } else {
+      void cancelOrder();
+    }
+  }, [dialogAction, cancelOrder, refundOrder]);
 
   const softDeleteOrder = useCallback(
     (orderId: string) => {
@@ -295,7 +357,7 @@ export default function OrdersPage() {
         const currentDeletedIds = getDeletedCancelledOrderIds();
         const nextDeletedIds = Array.from(new Set([...currentDeletedIds, orderId]));
         persistDeletedCancelledOrderIds(nextDeletedIds);
-        showToast("Order removed successfully", "success");
+        showToast("Order removed successfully.", "success");
       } catch {
         setOrders(previousOrders);
         showToast("Unable to remove this order right now.", "error");
@@ -306,24 +368,42 @@ export default function OrdersPage() {
 
   useEffect(() => {
     if (!toast) return;
-    const timeout = window.setTimeout(() => setToast(null), 3500);
+    const timeout = window.setTimeout(() => setToast(null), 4000);
     return () => window.clearTimeout(timeout);
   }, [toast]);
 
   useEffect(() => {
     if (!selectedOrderId) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") closeCancelDialog();
+      if (event.key === "Escape") closeDialog();
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [closeCancelDialog, selectedOrderId]);
+  }, [closeDialog, selectedOrderId]);
 
   useEffect(() => {
     void fetchOrders();
   }, [fetchOrders]);
 
   const hasOrders = useMemo(() => orders.length > 0, [orders]);
+
+  // Dialog copy varies by action
+  const dialogCopy = useMemo(() => {
+    if (dialogAction === "refund") {
+      return {
+        tag: "Cancel & Refund",
+        title: "Cancel this order and request a refund?",
+        body: "Your payment will be refunded to the original payment method within 5–7 business days.",
+        confirm: processingOrderId ? "Processing..." : "Confirm Refund",
+      };
+    }
+    return {
+      tag: "Cancel order",
+      title: "Are you sure you want to cancel this order?",
+      body: `Order #${activeOrder?.id.slice(0, 8).toUpperCase() ?? ""} will be marked as cancelled.`,
+      confirm: processingOrderId ? "Cancelling..." : "Confirm",
+    };
+  }, [dialogAction, processingOrderId, activeOrder]);
 
   return (
     <div className="flex min-h-screen flex-col bg-cream text-charcoal">
@@ -389,7 +469,7 @@ export default function OrdersPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-base font-semibold text-charcoal sm:text-lg">
-                          Order #{order.id.slice(0, 8).toUpperCase()}
+                      Order #{order.id.slice(0, 8).toUpperCase()}
                     </p>
                     <p className="mt-1 text-xs text-charcoal/60 sm:text-sm">{order.date}</p>
                   </div>
@@ -404,7 +484,7 @@ export default function OrdersPage() {
                         aria-label={`Remove cancelled order ${order.id}`}
                         className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-rose-600 text-xs font-bold text-white transition-all duration-200 hover:bg-rose-700"
                       >
-                        X
+                        ✕
                       </button>
                     ) : null}
                   </div>
@@ -432,19 +512,42 @@ export default function OrdersPage() {
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2 sm:gap-3">
                     <Link
-                      href={`/products/${order.items[0].product_id}`}
+                      href={`/products/${order.items[0]?.product_id}`}
                       className="inline-flex h-9 items-center rounded-full border border-sage px-4 text-xs font-semibold text-charcoal transition-all duration-200 hover:bg-sage/20 sm:text-sm"
                     >
                       View Details
                     </Link>
+
+                    {/* Pending orders → cancel (no refund needed) */}
                     {order.status === "pending" ? (
                       <button
                         type="button"
-                        onClick={() => setSelectedOrderId(order.id)}
-                        disabled={cancellingOrderId === order.id}
+                        onClick={() => openDialog(order.id, "cancel")}
+                        disabled={processingOrderId === order.id}
                         className="inline-flex h-9 items-center rounded-full bg-rose-600 px-4 text-xs font-semibold text-white shadow-sm transition-all duration-200 hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm"
                       >
-                        {cancellingOrderId === order.id ? "Cancelling..." : "Cancel Order"}
+                        {processingOrderId === order.id ? "Cancelling..." : "Cancel Order"}
+                      </button>
+                    ) : null}
+
+                    {/* Confirmed (paid) orders → cancel + refund */}
+                    {order.status === "confirmed" ? (
+                      <button
+                        type="button"
+                        onClick={() => openDialog(order.id, "refund")}
+                        disabled={processingOrderId === order.id}
+                        className="inline-flex h-9 items-center gap-1.5 rounded-full bg-rose-600 px-4 text-xs font-semibold text-white shadow-sm transition-all duration-200 hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm"
+                      >
+                        {processingOrderId === order.id ? "Processing..." : (
+                          <>
+                            {/* refund icon */}
+                            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                              <path d="M3 3v5h5" />
+                            </svg>
+                            Cancel & Refund
+                          </>
+                        )}
                       </button>
                     ) : null}
                   </div>
@@ -456,44 +559,52 @@ export default function OrdersPage() {
         )}
       </main>
 
+      {/* Confirmation dialog */}
       {activeOrder ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center px-4 py-6">
           <button
             type="button"
-            aria-label="Close cancel order dialog"
+            aria-label="Close dialog"
             className="absolute inset-0 bg-charcoal/45"
-            onClick={closeCancelDialog}
-            disabled={Boolean(cancellingOrderId)}
+            onClick={closeDialog}
+            disabled={Boolean(processingOrderId)}
           />
           <div
             role="dialog"
             aria-modal="true"
-            aria-labelledby="cancel-order-title"
+            aria-labelledby="dialog-title"
             className="relative w-full max-w-lg rounded-3xl border border-charcoal/10 bg-warm-white p-6 shadow-[0_24px_60px_-32px_rgba(61,61,61,0.55)]"
           >
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-charcoal/55">Cancel order</p>
-            <h2 id="cancel-order-title" className="mt-2 font-display text-3xl font-semibold text-charcoal">
-              Are you sure you want to cancel this order?
-            </h2>
-            <p className="mt-3 text-sm text-charcoal/70">
-              Order #{activeOrder.id.slice(0, 8).toUpperCase()} will be marked as cancelled...
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-charcoal/55">
+              {dialogCopy.tag}
             </p>
+            <h2 id="dialog-title" className="mt-2 font-display text-2xl font-semibold text-charcoal sm:text-3xl">
+              {dialogCopy.title}
+            </h2>
+            <p className="mt-3 text-sm text-charcoal/70">{dialogCopy.body}</p>
+
+            {dialogAction === "refund" ? (
+              <div className="mt-4 rounded-2xl border border-sage/25 bg-sage/10 px-4 py-3 text-sm text-charcoal/80">
+                Order total of <strong>{inrFormatter.format(activeOrder.total)}</strong> will be refunded to your original payment method.
+              </div>
+            ) : null}
+
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
                 type="button"
-                onClick={closeCancelDialog}
-                disabled={Boolean(cancellingOrderId)}
+                onClick={closeDialog}
+                disabled={Boolean(processingOrderId)}
                 className="inline-flex h-11 items-center justify-center rounded-full border border-charcoal/15 bg-cream px-6 text-sm font-semibold text-charcoal transition-all duration-200 hover:bg-charcoal/5 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Cancel
+                Go Back
               </button>
               <button
                 type="button"
-                onClick={() => void cancelOrder()}
-                disabled={Boolean(cancellingOrderId)}
+                onClick={handleConfirmDialog}
+                disabled={Boolean(processingOrderId)}
                 className="inline-flex h-11 items-center justify-center rounded-full bg-rose-600 px-6 text-sm font-semibold text-white transition-all duration-200 hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {cancellingOrderId === activeOrder.id ? "Cancelling..." : "Confirm"}
+                {dialogCopy.confirm}
               </button>
             </div>
           </div>

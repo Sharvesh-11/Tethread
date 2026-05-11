@@ -21,14 +21,15 @@ class Settings(BaseSettings):
 	STRIPE_WEBHOOK_SECRET: str = "whsec_test_dummy_webhook"
 
 	# Razorpay API key ID for payment gateway integration (optional).
-	RAZORPAY_KEY_ID: str = "rzp_test_dummy_key_id"
+	RAZORPAY_KEY_ID: str = "rzp_test_SmoNU0OcMM8HJO"
 
 	# Razorpay API secret key for payment verification (optional).
-	RAZORPAY_KEY_SECRET: str = "rzp_test_dummy_secret"
+	RAZORPAY_KEY_SECRET: str = "Bp9y0loKeMRlX3jnieEnuaAw"
 
 	# Frontend origin used for redirects and CORS-related settings.
 	FRONTEND_URL: str = "http://localhost:3000"
-
+    
+	N8N_WEBHOOK_URL: str = "https://n8n.zenith-labs.app/webhook/checkout"
 
 	# Service API key for automation integrations (n8n, etc).
 	SERVICE_API_KEY: str = ""

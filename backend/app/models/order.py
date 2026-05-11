@@ -10,8 +10,16 @@ from sqlalchemy.orm import relationship
 from app.database import Base
 
 
-ORDER_STATUSES = ("pending", "confirmed", "shipped", "delivered", "cancelled")
-
+ORDER_STATUSES = (
+    "pending",
+    "confirmed",
+    "shipped",
+    "delivered",
+    "cancelled",
+    "refund_initiated",
+    "refunded",
+    "refund_failed",
+)
 
 class Order(Base):
 	"""Represents a customer order in the Tethread store."""
@@ -46,6 +54,8 @@ class Order(Base):
 
 	# Razorpay payment identifier after successful payment.
 	razorpay_payment_id = Column(String(255), nullable=True)
+
+	razorpay_refund_id = Column(String(255), nullable=True)
 
 	# Timestamp when the order was created (UTC).
 	created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

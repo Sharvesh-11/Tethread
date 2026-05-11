@@ -1,9 +1,9 @@
 "use client";
 import React, { useEffect, useState, useMemo } from "react";
+import { useSession } from "next-auth/react";
 import { getAdminHeaders } from "@/lib/api";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
-
 const SUPERADMIN_EMAIL = "sharveshkichu@gmail.com";
 
 type User = {
@@ -17,11 +17,29 @@ type User = {
 };
 
 export default function UsersPage() {
+  const { data: session } = useSession();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [toggling, setToggling] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [currentUserEmail, setCurrentUserEmail] = useState("");
+
+  useEffect(() => {
+    async function getCurrentEmail() {
+      if (session?.user?.email) {
+        setCurrentUserEmail(session.user.email);
+        return;
+      }
+      try {
+        const headers = await getAdminHeaders();
+        const res = await fetch(`${API}/auth/me`, { headers });
+        const data = await res.json();
+        setCurrentUserEmail(data.email || "");
+      } catch {}
+    }
+    getCurrentEmail();
+  }, [session]);
 
   useEffect(() => {
     async function fetchUsers() {
@@ -42,7 +60,6 @@ export default function UsersPage() {
     fetchUsers();
   }, []);
 
-  // Filter users by name or email — happens client-side, no extra API call needed
   const filteredUsers = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return users;
@@ -52,6 +69,8 @@ export default function UsersPage() {
         u.email.toLowerCase().includes(query)
     );
   }, [search, users]);
+
+  const isSuperAdmin = currentUserEmail === SUPERADMIN_EMAIL;
 
   async function toggleAdmin(userId: string, currentIsAdmin: boolean) {
     if (!confirm(`${currentIsAdmin ? "Remove" : "Grant"} admin access for this user?`)) return;
@@ -95,7 +114,6 @@ export default function UsersPage() {
         Users Management
       </h1>
 
-      {/* Search bar */}
       <div className="mb-4 relative">
         <input
           type="text"
@@ -115,7 +133,6 @@ export default function UsersPage() {
         )}
       </div>
 
-      {/* Result count */}
       <p className="text-xs text-charcoal/50 mb-3">
         Showing {filteredUsers.length} of {users.length} users
       </p>
@@ -163,7 +180,7 @@ export default function UsersPage() {
                     <span className="px-3 py-1 rounded-full text-xs font-semibold bg-sage/30 text-charcoal">
                       👑 Superadmin
                     </span>
-                  ) : (
+                  ) : isSuperAdmin ? (
                     <button
                       disabled={toggling === user.id}
                       onClick={() => toggleAdmin(user.id, user.is_admin)}
@@ -179,6 +196,8 @@ export default function UsersPage() {
                         ? "Remove Admin"
                         : "Make Admin"}
                     </button>
+                  ) : (
+                    <span className="text-xs text-charcoal/40">—</span>
                   )}
                 </td>
               </tr>
